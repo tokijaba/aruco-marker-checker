@@ -1,55 +1,94 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArUco カメラテスト</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArUco IDチェッカー</title>
 
-  <style>
-    body {
-      margin: 0;
-      padding: 20px;
-      font-family: sans-serif;
-      background: #111;
-      color: white;
-      text-align: center;
-    }
+<style>
+body {
+  margin: 0;
+  padding: 16px;
+  background: #111;
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+}
 
-    h1 {
-      font-size: 28px;
-    }
+h1 {
+  font-size: 26px;
+  margin: 8px;
+}
 
-    video {
-      width: 100%;
-      max-width: 900px;
-      border-radius: 16px;
-      background: black;
-    }
+#viewer {
+  position: relative;
+  max-width: 900px;
+  margin: auto;
+}
 
-    button {
-      margin-top: 20px;
-      padding: 16px 30px;
-      font-size: 22px;
-      border: none;
-      border-radius: 12px;
-    }
+video {
+  display: none;
+}
 
-    #start {
-      background: #1688c9;
-      color: white;
-    }
+canvas {
+  width: 100%;
+  background: black;
+  border-radius: 14px;
+}
 
-    #status {
-      margin-top: 15px;
-      font-size: 20px;
-    }
-  </style>
+button {
+  margin: 6px;
+  padding: 14px 20px;
+  font-size: 20px;
+  border: 0;
+  border-radius: 12px;
+}
+
+#start {
+  background: #1688c9;
+  color: white;
+}
+
+#torch {
+  background: #d49b16;
+  color: white;
+}
+
+#result {
+  margin-top: 16px;
+  padding: 18px;
+  background: #222;
+  border-radius: 14px;
+}
+
+#id {
+  font-size: 60px;
+  font-weight: bold;
+}
+
+#group {
+  font-size: 26px;
+  margin-top: 8px;
+  color: #69b7ff;
+}
+
+#status {
+  margin: 12px;
+  font-size: 18px;
+  color: #7ee787;
+}
+</style>
 </head>
 
 <body>
 
-  <h1>ArUco カメラテスト</h1>
+<h1>ArUco IDチェッカー</h1>
 
+<div id="status">
+  認識ライブラリ読込中…
+</div>
+
+<div id="viewer">
   <video
     id="video"
     autoplay
@@ -57,51 +96,416 @@
     muted>
   </video>
 
-  <br>
+  <canvas id="canvas"></canvas>
+</div>
 
+<div>
   <button id="start">
-    カメラ開始
+    📷 カメラ開始
   </button>
 
-  <div id="status">
-    待機中
+  <button id="torch">
+    🔦 ライト
+  </button>
+</div>
+
+<div id="result">
+  <div id="id">---</div>
+  <div id="group">
+    マーカーを映してください
   </div>
+</div>
 
-  <script>
-    const video = document.getElementById("video");
-    const startButton = document.getElementById("start");
-    const status = document.getElementById("status");
 
-    startButton.addEventListener("click", async () => {
+<script src="https://cdn.jsdelivr.net/gh/damianofalcioni/js-aruco2@master/src/cv.js"></script>
 
-      try {
+<script src="https://cdn.jsdelivr.net/gh/damianofalcioni/js-aruco2@master/src/aruco.js"></script>
 
-        status.textContent = "カメラ起動中...";
+<script src="https://cdn.jsdelivr.net/gh/damianofalcioni/js-aruco2@master/src/dictionaries/aruco_4x4_1000.js"></script>
 
-        const stream =
-          await navigator.mediaDevices.getUserMedia({
-            audio: false,
 
-            video: {
-              facingMode: {
-                ideal: "environment"
-              }
+<script>
+
+const video =
+  document.getElementById("video");
+
+const canvas =
+  document.getElementById("canvas");
+
+const ctx =
+  canvas.getContext("2d");
+
+const status =
+  document.getElementById("status");
+
+const idText =
+  document.getElementById("id");
+
+const groupText =
+  document.getElementById("group");
+
+
+let detector = null;
+let stream = null;
+let videoTrack = null;
+let torchOn = false;
+
+
+/* ---------- ID分類 ---------- */
+
+function groupName(id) {
+
+  if (id >= 0 && id <= 9)
+    return "ローバー";
+
+  if (id >= 10 && id <= 49)
+    return "固定座標";
+
+  if (id >= 50 && id <= 99)
+    return "棚";
+
+  if (id >= 100 && id <= 199)
+    return "作業";
+
+  if (id >= 200 && id <= 207)
+    return "ルート";
+
+  if (id >= 208 && id <= 249)
+    return "その他・予備";
+
+  return "対象外";
+}
+
+
+/* ---------- ライブラリ確認 ---------- */
+
+window.addEventListener(
+  "load",
+  function() {
+
+    try {
+
+      detector =
+        new AR.Detector({
+          dictionaryName:
+            "ARUCO_4X4_1000"
+        });
+
+      status.textContent =
+        "認識ライブラリOK";
+
+    } catch (error) {
+
+      console.error(error);
+
+      status.textContent =
+        "認識ライブラリ読込失敗";
+    }
+  }
+);
+
+
+/* ---------- カメラ ---------- */
+
+document
+.getElementById("start")
+.addEventListener(
+  "click",
+  async function() {
+
+    try {
+
+      status.textContent =
+        "カメラ起動中…";
+
+      stream =
+        await navigator.mediaDevices
+        .getUserMedia({
+
+          audio: false,
+
+          video: {
+
+            facingMode: {
+              ideal: "environment"
+            },
+
+            width: {
+              ideal: 1280
+            },
+
+            height: {
+              ideal: 720
             }
-          });
+          }
+        });
 
-        video.srcObject = stream;
+      video.srcObject =
+        stream;
 
-        status.textContent = "カメラ動作中";
+      await video.play();
 
-      } catch (error) {
+      videoTrack =
+        stream
+        .getVideoTracks()[0];
 
-        console.error(error);
+      status.textContent =
+        "カメラ動作中";
+
+      requestAnimationFrame(
+        detectLoop
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      status.textContent =
+        "カメラ起動失敗：" +
+        error.name;
+    }
+  }
+);
+
+
+/* ---------- ライト ---------- */
+
+document
+.getElementById("torch")
+.addEventListener(
+  "click",
+  async function() {
+
+    if (!videoTrack) {
+
+      status.textContent =
+        "先にカメラを開始してください";
+
+      return;
+    }
+
+    try {
+
+      const capabilities =
+        videoTrack.getCapabilities
+        ? videoTrack.getCapabilities()
+        : {};
+
+      if (!capabilities.torch) {
 
         status.textContent =
-          "カメラ起動失敗：" + error.name;
+          "この端末ではライト制御非対応";
+
+        return;
       }
-    });
-  </script>
+
+      torchOn = !torchOn;
+
+      await videoTrack
+        .applyConstraints({
+
+          advanced: [
+            {
+              torch: torchOn
+            }
+          ]
+        });
+
+      status.textContent =
+        torchOn
+        ? "ライトON"
+        : "ライトOFF";
+
+    } catch (error) {
+
+      console.error(error);
+
+      status.textContent =
+        "ライト制御できません";
+    }
+  }
+);
+
+
+/* ---------- ArUco認識 ---------- */
+
+function detectLoop() {
+
+  if (
+    !stream ||
+    !detector ||
+    video.readyState < 2
+  ) {
+
+    requestAnimationFrame(
+      detectLoop
+    );
+
+    return;
+  }
+
+
+  const width = 640;
+
+  const ratio =
+    video.videoHeight /
+    video.videoWidth;
+
+  const height =
+    Math.round(
+      width * ratio
+    );
+
+
+  canvas.width =
+    width;
+
+  canvas.height =
+    height;
+
+
+  ctx.drawImage(
+    video,
+    0,
+    0,
+    width,
+    height
+  );
+
+
+  const imageData =
+    ctx.getImageData(
+      0,
+      0,
+      width,
+      height
+    );
+
+
+  let markers = [];
+
+  try {
+
+    markers =
+      detector.detect(
+        imageData
+      );
+
+  } catch (error) {
+
+    console.error(error);
+
+    status.textContent =
+      "認識処理エラー";
+  }
+
+
+  let validMarker = null;
+
+
+  for (const marker of markers) {
+
+    /*
+      DICT_4X4_250として使うので
+      ID 0〜249だけ採用
+    */
+
+    if (
+      marker.id < 0 ||
+      marker.id > 249
+    ) {
+      continue;
+    }
+
+
+    validMarker =
+      marker;
+
+
+    /* 緑枠を描く */
+
+    const corners =
+      marker.corners;
+
+    ctx.strokeStyle =
+      "#00ff00";
+
+    ctx.lineWidth =
+      5;
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      corners[0].x,
+      corners[0].y
+    );
+
+    for (
+      let i = 1;
+      i < corners.length;
+      i++
+    ) {
+
+      ctx.lineTo(
+        corners[i].x,
+        corners[i].y
+      );
+    }
+
+    ctx.closePath();
+
+    ctx.stroke();
+
+
+    /* ID表示 */
+
+    ctx.fillStyle =
+      "#00ff00";
+
+    ctx.font =
+      "bold 30px sans-serif";
+
+    ctx.fillText(
+      "ID " + marker.id,
+      corners[0].x,
+      Math.max(
+        30,
+        corners[0].y - 10
+      )
+    );
+
+
+    break;
+  }
+
+
+  if (validMarker) {
+
+    idText.textContent =
+      "ID " +
+      validMarker.id;
+
+    groupText.textContent =
+      groupName(
+        validMarker.id
+      );
+
+  } else {
+
+    idText.textContent =
+      "---";
+
+    groupText.textContent =
+      "マーカーを映してください";
+  }
+
+
+  requestAnimationFrame(
+    detectLoop
+  );
+}
+
+</script>
 
 </body>
 </html>
