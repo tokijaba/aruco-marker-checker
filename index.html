@@ -3,10 +3,105 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArUcoテスト</title>
+  <title>ArUco カメラテスト</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 28px;
+    }
+
+    video {
+      width: 100%;
+      max-width: 900px;
+      border-radius: 16px;
+      background: black;
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 16px 30px;
+      font-size: 22px;
+      border: none;
+      border-radius: 12px;
+    }
+
+    #start {
+      background: #1688c9;
+      color: white;
+    }
+
+    #status {
+      margin-top: 15px;
+      font-size: 20px;
+    }
+  </style>
 </head>
+
 <body>
-  <h1>ArUcoテストページ</h1>
-  <p>ここが表示されたらGitHub Pages成功！</p>
+
+  <h1>ArUco カメラテスト</h1>
+
+  <video
+    id="video"
+    autoplay
+    playsinline
+    muted>
+  </video>
+
+  <br>
+
+  <button id="start">
+    カメラ開始
+  </button>
+
+  <div id="status">
+    待機中
+  </div>
+
+  <script>
+    const video = document.getElementById("video");
+    const startButton = document.getElementById("start");
+    const status = document.getElementById("status");
+
+    startButton.addEventListener("click", async () => {
+
+      try {
+
+        status.textContent = "カメラ起動中...";
+
+        const stream =
+          await navigator.mediaDevices.getUserMedia({
+            audio: false,
+
+            video: {
+              facingMode: {
+                ideal: "environment"
+              }
+            }
+          });
+
+        video.srcObject = stream;
+
+        status.textContent = "カメラ動作中";
+
+      } catch (error) {
+
+        console.error(error);
+
+        status.textContent =
+          "カメラ起動失敗：" + error.name;
+      }
+    });
+  </script>
+
 </body>
 </html>
